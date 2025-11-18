@@ -69,13 +69,29 @@ Este projeto está dividido em **3 repositórios separados**:
         - Imagens dos microsserviços (Docker Hub)
 ```
 
-### Por que 3 repositórios?
+
 
 - ✅ **Separação de responsabilidades**: Cada microsserviço evolui independentemente
 - ✅ **CI/CD independente**: Cada serviço pode ter seu próprio pipeline
 - ✅ **Versionamento isolado**: Mudanças em um serviço não afetam o outro
 - ✅ **Facilita deploy**: Cada serviço pode ser deployado separadamente
 - ✅ **Repositório umbrella**: Ponto único para subir toda a stack
+
+## 🔗 Links dos Repositórios
+
+### Repositórios do Código Fonte
+
+- **notification-api**: [https://github.com/Dyel-L/notification-api](https://github.com/Dyel-L/notification-api)
+  - Código fonte do microsserviço de API
+  - Testes unitários e de integração
+
+- **alert-processor**: [https://github.com/Dyel-L/alert-processor](https://github.com/Dyel-L/alert-processor)
+  - Código fonte do microsserviço processador
+  - Testes unitários
+
+- **infra-notification-system**: [https://github.com/Dyel-L/infra-notification-system](https://github.com/Dyel-L/infra-notification-system) **(ESTE REPOSITÓRIO)**
+  - Docker Compose e orquestração
+  - Documentação de infraestrutura
 
 ## 🚀 Tecnologias Utilizadas
 
@@ -108,6 +124,8 @@ Este projeto está dividido em **3 repositórios separados**:
 
 ### ⚡ Início 
 
+
+
 ```bash
 # 1. Clone este repositório
 git clone https://github.com/seu-usuario/infra-notification-system.git
@@ -116,8 +134,17 @@ cd infra-notification-system
 # 2. Suba toda a infraestrutura
 docker-compose up -d
 ```
+## ⚠️ Importante: Docker Desktop
 
-**Pronto!** O Docker irá:
+### Windows e macOS
+
+**Antes de executar qualquer comando Docker, certifique-se de que o Docker Desktop está aberto e rodando.**
+
+### Linux
+
+No Linux, basta garantir que o serviço está ativo
+
+O Docker irá:
 1. Baixar as imagens do Docker Hub automaticamente
 2. Subir Zookeeper e Kafka
 3. Subir MySQL e criar o banco `alerts_db`
@@ -198,7 +225,7 @@ curl -X POST http://localhost:8080/alerts \
 }
 ```
 
-**Exemplo de resposta de erro(500 Internal Server Error):**
+**Exemplo de resposta de erro (500 Internal Server Error):**
 ```json
 {
   "error": "Internal Server Error",
@@ -228,85 +255,11 @@ docker exec -it mysql mysql -u root -proot alerts_db
 # Consultar os alertas
 SELECT * FROM alerts ORDER BY id DESC LIMIT 10;
 
-# Ver apenas os processados
-SELECT clientId, alertType, message, status, created_at 
-FROM alerts 
-WHERE status = 'PROCESSADO' 
-ORDER BY created_at DESC;
-
 # Sair do MySQL
 exit;
 ```
 
-### 4️⃣ Script de Teste Completo
-
-Crie um arquivo `test-system.sh`:
-
-```bash
-#!/bin/bash
-
-echo "🧪 Testando o sistema de notificações..."
-echo ""
-
-# Enviar 5 alertas
-for i in {1..5}; do
-  echo "📤 Enviando alerta $i..."
-  curl -s -X POST http://localhost:8080/alerts \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"clientId\": $((12345 + i)),
-      \"alertType\": \"EMAIL_MARKETING\",
-      \"message\": \"Teste de alerta #$i\"
-    }"
-  echo ""
-  sleep 1
-done
-
-echo ""
-echo "⏳ Aguardando processamento (10 segundos)..."
-sleep 10
-
-echo ""
-echo "📊 Verificando alertas processados:"
-docker exec -it mysql mysql -u root -proot alerts_db \
-  -e "SELECT clientId, alertType, status, created_at FROM alerts ORDER BY created_at DESC LIMIT 5;"
-
-echo ""
-echo "✅ Teste concluído!"
-```
-
-Execute:
-```bash
-chmod +x test-system.sh
-./test-system.sh
-```
-
 ## 🛠️ Comandos Úteis
-
-### Gerenciar Serviços
-
-```bash
-# Parar todos os serviços (mantém dados)
-docker-compose down
-
-# Parar e remover volumes (⚠️ APAGA DADOS DO BANCO)
-docker-compose down -v
-
-# Restart de um serviço específico
-docker-compose restart notification-api
-docker-compose restart alert-processor
-
-# Rebuild e restart (após atualização de imagem)
-docker-compose pull
-docker-compose up -d
-
-# Parar um serviço específico
-docker-compose stop notification-api
-
-# Iniciar um serviço específico
-docker-compose start notification-api
-```
-
 ### Monitoramento
 
 ```bash
@@ -367,27 +320,86 @@ Thread.sleep(PROCESSING_DELAY_MS);
 ### 4. Persistência Transacional
 
 **Configuração:**
+O listener consome a mensagem e delega para o serviço de aplicação. Não deve carregar a responsabilidade de transação nem fazer lógica de negócio.
+
+**Configuração:**
 ```java
 @KafkaListener(topics = "alerts", groupId = "processor-group")
-@Transactional
 public void consumeAlert(String alertJson) {
-    // processamento
-    alertRepository.save(entity);
-    // commit no Kafka só acontece após sucesso no save
+    // Sem @Transactional – apenas orquestra o fluxo
+    alertService.processAlert(alertJson);
 }
 ```
 
-**Benefícios:**
-- Se falhar ao salvar no MySQL, mensagem não é confirmada no Kafka
-- Mensagem será reprocessada automaticamente
-- Garante consistência: ou salva tudo ou nada
+## Camada de Aplicação (Serviços)
+
+Responsável por processar, mapear e persistir. Separa fluxo principal e gravação de falhas em serviços distintos.
+
+### Fluxo de Sucesso – Transação Única
+
+**Configuração:**
+```java
+@Transactional
+public AlertEntity processAlert(String alertJson) {
+    Alert alert = objectMapper.readValue(alertJson, Alert.class);
+    AlertEntity entity = alertMapper.toSuccessEntity(alert);
+    return alertRepository.save(entity);
+}
+```
+
+### Fluxo de Falha – Transação Independente
+
+**Configuração:**
+```java
+@Transactional(propagation = Propagation.REQUIRES_NEW)
+public void registerFailureFromAlertJson(String alertJson, String failureReason) {
+    Alert alert = objectMapper.readValue(alertJson, Alert.class);
+    AlertEntity failedEntity = alertMapper.toFailureEntityFromAlert(alert, failureReason);
+    alertRepository.save(failedEntity);
+}
+```
+---
+
+## Fluxos Transacionais
+
+### Fluxo de Sucesso
+
+1. **Listener Kafka** recebe a mensagem
+2. `alertService.processAlert()` inicia a transação **T1**
+3. Desserializa JSON → mapeia entidade → persiste no MySQL
+4. **Se tudo ocorreu bem:**
+  - Commit de **T1**
+  - Kafka confirma o offset
+5. **Se ocorrer falha:**
+  - Rollback automático de **T1**
+  - Offset não confirmado → mensagem será reprocessada
+
+### Fluxo de Falha
+
+1. Ocorre erro no listener ou no serviço (JSON inválido, falha no MySQL etc.)
+2. `alertFailureService.registerFailure*()` abre nova transação **T2** (`REQUIRES_NEW`)
+3. Log de falha gravado no MySQL
+4. Commit de **T2**, independente de **T1**
+5. Exceção relançada → rollback de **T1**
+6. Offset não confirmado → mensagem será reprocessada ou enviada para DLT, dependendo da config
+
+---
+
+## Benefícios da Arquitetura
+
+- ✅ **Integridade de dados:** ou processa com sucesso ou registra falha separadamente
+- ✅ **Transações independentes:** rollback do fluxo principal não remove logs de falha
+- ✅ **Separação de responsabilidades:** listener só orquestra; serviços fazem o trabalho pesado
+- ✅ **Resiliência:** `REQUIRES_NEW` garante registro de falhas mesmo com erros no fluxo principal
+- ✅ **Rastreabilidade:** falhas ficam armazenadas com timestamp e motivo detalhado
+
 
 ### 5. Status do Alerta
 
 Cada alerta processado tem um status final:
 
-- **`PROCESSADO`**: Processamento bem-sucedido
-- **`FALHA`**: Erro durante o processamento
+- **`SUCCESS`**: Processamento bem-sucedido
+- **`FAILURE`**: Erro durante o processamento
 
 ### 6. Healthchecks e Dependências
 
@@ -420,40 +432,11 @@ healthcheck:
 - Facilita manutenção e versionamento
 - Repositório umbrella como ponto único de entrada
 
-## 🔗 Links dos Repositórios
-
-### Repositórios do Código Fonte
-
-- **notification-api**: [https://github.com/Dyel-L/notification-api](https://github.com/Dyel-L/notification-api)
-    - Código fonte do microsserviço de API
-    - Testes unitários e de integração
-
-- **alert-processor**: [https://github.com/Dyel-L/alert-processor](https://github.com/Dyel-L/alert-processor)
-    - Código fonte do microsserviço processador
-    - Testes unitários e de integração
-
-- **infra-notification-system**: [https://github.com/Dyel-L/infra-notification-system](https://github.com/Dyel-L/infra-notification-system) **(ESTE REPOSITÓRIO)**
-    - Docker Compose e orquestração
-    - Documentação de infraestrutura
-    - Scripts de teste
-
 ### Imagens Docker
 
-- `dyelll/notification-api:latest` - [Docker Hub](https://hub.docker.com/r/seu-usuario/notification-api)
-- `dyelll/alert-processor:latest` - [Docker Hub](https://hub.docker.com/r/seu-usuario/alert-processor)
+- `dyelll/notification-api:latest` - [Docker Hub](https://hub.docker.com/r/dyelll/notification-api)
+- `dyelll/alert-processor:latest` - [Docker Hub](https://hub.docker.com/r/dyelll/alert-processor)
 
-
-## 🚀 Melhorias Futuras
-
-- [ ] Implementar autenticação e autorização (OAuth2/JWT)
-- [ ] Adicionar circuit breaker (Resilience4j)
-- [ ] Implementar métricas (Prometheus + Grafana)
-- [ ] Adicionar tracing distribuído (Jaeger/Zipkin)
-- [ ] Implementar API de consulta de alertas processados
-- [ ] Adicionar retry policy com dead letter queue
-- [ ] Implementar rate limiting na API
-- [ ] Adicionar Kafka UI para monitoramento visual
-- [ ] Configurar alertas de monitoramento
 
 ## 📄 Licença
 
@@ -469,4 +452,4 @@ Dylan Bitencourt Gonçalves
 
 **Status:** ✅ Pronto para uso
 
-**Última atualização:** Novembro 2024
+**Última atualização:** Novembro 2025
