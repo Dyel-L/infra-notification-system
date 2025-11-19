@@ -157,12 +157,12 @@ O Docker irá:
 docker-compose ps
 
 # Resultado esperado:
-# NAME           IMAGE                                    STATUS
-# zookeeper      confluentinc/cp-zookeeper:7.5.0         Up
-# kafka          confluentinc/cp-kafka:7.5.0             Up
-# mysql          mysql:8.0                                Up (healthy)
-# notification-api    seu-usuario/notification-api:latest Up
-# alert-processor     seu-usuario/alert-processor:latest  Up
+NAME               IMAGE                             COMMAND                  SERVICE            CREATED         STATUS                   PORTS
+alert-processor    dyelll/alert-processor:latest     "java -jar app.jar"      alert-processor    2 minutes ago   Up 2 minutes
+kafka              confluentinc/cp-kafka:7.5.0       "/etc/confluent/dock…"   kafka              2 minutes ago   Up 2 minutes             0.0.0.0:9092->9092/tcp, [::]:9092->9092/tcp
+mysql              mysql:8.0                         "docker-entrypoint.s…"   mysql              2 minutes ago   Up 2 minutes (healthy)   0.0.0.0:3306->3306/tcp, [::]:3306->3306/tcp
+notification-api   dyelll/notification-api:latest    "java -jar app.jar"      notification-api   2 minutes ago   Up 2 minutes             0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+zookeeper          confluentinc/cp-zookeeper:7.5.0   "/etc/confluent/dock…"   zookeeper          2 minutes ago   Up 2 minutes             0.0.0.0:2181->2181/tcp, [::]:2181->2181/tcp
 ```
 
 ### 📝 Acompanhar Logs
