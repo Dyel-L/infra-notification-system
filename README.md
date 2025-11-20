@@ -110,7 +110,7 @@ No Linux, basta garantir que o serviço está ativo
 
 O Docker irá:
 1. Baixar as imagens do Docker Hub automaticamente
-2. Subir Zookeeper e Kafka
+2. Subir Zookeeper e Kafka e Redis
 3. Subir MySQL e criar o banco `alerts_db`
 4. Subir os dois microsserviços
 
