@@ -197,7 +197,7 @@ docker-compose logs --tail=100 -f
   "alertType": "SECURITY", // OBRIGATÓRIO
   "clientId": "´123", // OBRIGATÓRIO
   "message": "Intrusão detectada no setor 7",  // OBRIGATÓRIO
-  "severity": "MEDIUM",
+  "severity": "MEDIUM", // OBRIGATÓRIO
   "source": "Camera-01"
 }
 ```
