@@ -9,44 +9,6 @@ Este é o **repositório de infraestrutura** que orquestra todos os componentes 
 1. **notification-api** - Recebe alertas via REST API e os publica no Kafka
 2. **alert-processor** - Consome alertas do Kafka, processa (com delay simulado de 500ms) e persiste no MySQL
 
-### Arquitetura do Sistema
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Cliente (curl, Postman)                     │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ HTTP POST
-                             ▼
-                  ┌──────────────────────┐
-                  │  notification-api    │
-                  │    (porta 8080)      │
-                  │  - Valida payload    │
-                  │  - Retorna 202       │
-                  └──────────┬───────────┘
-                             │ Publica mensagem
-                             ▼
-                  ┌──────────────────────┐
-                  │   Apache Kafka       │
-                  │   Tópico: alerts     │
-                  │  (Message Broker)    │
-                  └──────────┬───────────┘
-                             │ Consome mensagem
-                             ▼
-                  ┌──────────────────────┐
-                  │  alert-processor     │
-                  │  - Consome do Kafka  │
-                  │  - Delay 500ms       │
-                  │  - Persiste no DB    │
-                  └──────────┬───────────┘
-                             │
-                             ▼
-                  ┌──────────────────────┐
-                  │      MySQL 8.0       │
-                  │   alerts_db          │
-                  │  (Persistência)      │
-                  └──────────────────────┘
-```
-
 ##  Estrutura dos Repositórios
 
 Este projeto está dividido em **3 repositórios separados**:
@@ -130,6 +92,7 @@ Este projeto está dividido em **3 repositórios separados**:
 ```bash
 # 1. Clone este repositório
 git clone https://github.com/seu-usuario/infra-notification-system.git
+
 cd infra-notification-system
 
 # 2. Suba toda a infraestrutura
@@ -185,12 +148,13 @@ docker-compose logs --tail=100 -f
 
 ##  Endpoints Disponíveis
 
-| Serviço | Endpoint | Método | Porta | Descrição |
-|---------|----------|--------|-------|-----------|
+| Serviço          | Endpoint | Método | Porta | Descrição |
+|------------------|----------|--------|-------|-----------|
 | notification-api | `/alerts` | POST | 8080 | Criar novo alerta |
-| MySQL | - | - | 3306 | Banco de dados |
-| Kafka | - | - | 9092 | Message broker |
-| Zookeeper | - | - | 2181 | Coordenação Kafka |
+| MySQL            | - | - | 3306 | Banco de dados |
+| Kafka            | - | - | 9092 | Message broker |
+| Zookeeper        | - | - | 2181 | Coordenação Kafka |
+| Redis            | - | - | 6379 | Cache   |
 
 ### Payload do Endpoint /alerts
 
@@ -288,6 +252,50 @@ docker network inspect infra-notification-system_ubisafe-network
 
 ##  Decisões de Arquitetura
 
+
+O sistema é composto por dois microsserviços independentes que se comunicam de forma assíncrona através do Apache Kafka:
+
+```
+Cliente → [notification-api] → Kafka (alerts topic) → [alert-processor] → MySQL
+                ↓                                              ↓
+              Redis                                     Registro de Falhas
+         (Deduplicação)
+```
+
+### Características Principais
+
+- Processamento assíncrono de alertas
+- Deduplicação automática (janela configurável)
+- Garantia de entrega com Kafka
+- Persistência transacional com tratamento robusto de falhas
+- Rastreabilidade completa de sucesso e erros
+
+---
+
+## Microsserviços
+
+### notification-api (Produtor)
+
+**Responsabilidades:**
+- Receber requisições HTTP de criação de alertas
+- Validar payload de entrada (Bean Validation)
+- Verificar duplicação usando Redis
+- Publicar mensagem no tópico Kafka `alerts`
+- Responder imediatamente com HTTP 202 (Accepted)
+
+### alert-processor (Consumidor)
+
+**Responsabilidades:**
+- Consumir mensagens do tópico `alerts`
+- Deserializar e validar alertas
+- Processar com delay simulado (500ms)
+- Persistir alertas processados no MySQL
+- Registrar falhas em transação independente
+
+---
+
+
+
 ### 1. Comunicação Assíncrona com Kafka
 
 **Por quê?**
@@ -297,7 +305,54 @@ docker network inspect infra-notification-system_ubisafe-network
 - ✅ **Performance**: API responde imediatamente (202) sem aguardar processamento
 - ✅ **Garantia de entrega**: Kafka garante que mensagens não sejam perdidas
 
-### 2. Pattern Produtor-Consumidor
+**Configuração do Producer:**
+```java
+configProps.put(ProducerConfig.ACKS_CONFIG, "all");
+configProps.put(ProducerConfig.RETRIES_CONFIG, 3);
+configProps.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
+```
+
+- `acks=all`: Espera confirmação de todos os brokers in-sync
+- `retries=3`: Tenta reenviar até 3 vezes em caso de falha
+- `max.in.flight=1`: Garante ordem das mensagens
+
+**Configuração do Consumer:**
+```java
+configProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+```
+
+- Commit manual de offset somente após processamento completo
+- Mensagens com erro podem ser reprocessadas ou enviadas para DLT
+
+---
+
+### 2. Deduplicação com Redis
+
+**Implementação:**
+```java
+public boolean isDuplicate(String alertId) {
+    String key = PREFIX + alertId;
+    Boolean firstTime = redisTemplate.opsForValue()
+        .setIfAbsent(key, "1", windowSeconds, TimeUnit.SECONDS);
+    return firstTime == null || !firstTime;
+}
+```
+
+**Por quê?**
+- ✅ Evita processamento duplicado de alertas idênticos em curto período
+- ✅ Redis in-memory é extremamente rápido
+- ✅ TTL automático: chaves expiram após janela configurável
+- ✅ Operação SETNX (Set If Not Exists) é atômica
+
+**Critério de Duplicação:**
+- Mesma combinação de `clientId + alertType + message + severity`
+- `timestamp` e `source` não são considerados
+- Hash determinístico garante mesmo ID para alertas idênticos
+
+---
+
+### 3. Pattern Produtor-Consumidor
 
 **notification-api (Produtor):**
 - Responsabilidade única: validar e publicar
@@ -309,7 +364,9 @@ docker network inspect infra-notification-system_ubisafe-network
 - Não conhece quem enviou
 - Processa no seu próprio ritmo
 
-### 3. Delay Simulado (500ms)
+---
+
+### 4. Delay Simulado (500ms)
 
 **Implementação:**
 ```java
@@ -324,12 +381,14 @@ Thread.sleep(PROCESSING_DELAY_MS);
 - Cliente recebe 202 imediatamente, sem esperar os 500ms
 - Facilita visualização do fluxo em demonstrações
 
-### 4. Persistência Transacional
+---
 
-**Configuração:**
+### 5. Persistência Transacional
+
+#### Camada de Infraestrutura (Listener Kafka)
+
 O listener consome a mensagem e delega para o serviço de aplicação. Não deve carregar a responsabilidade de transação nem fazer lógica de negócio.
 
-**Configuração:**
 ```java
 @KafkaListener(topics = "alerts", groupId = "processor-group")
 public void consumeAlert(String alertJson) {
@@ -338,13 +397,11 @@ public void consumeAlert(String alertJson) {
 }
 ```
 
-## Camada de Aplicação (Serviços)
+#### Camada de Aplicação (Serviços)
 
 Responsável por processar, mapear e persistir. Separa fluxo principal e gravação de falhas em serviços distintos.
 
-### Fluxo de Sucesso – Transação Única
-
-**Configuração:**
+**Fluxo de Sucesso – Transação Única:**
 ```java
 @Transactional
 public AlertEntity processAlert(String alertJson) {
@@ -354,9 +411,7 @@ public AlertEntity processAlert(String alertJson) {
 }
 ```
 
-### Fluxo de Falha – Transação Independente
-
-**Configuração:**
+**Fluxo de Falha – Transação Independente:**
 ```java
 @Transactional(propagation = Propagation.REQUIRES_NEW)
 public void registerFailureFromAlertJson(String alertJson, String failureReason) {
@@ -365,6 +420,51 @@ public void registerFailureFromAlertJson(String alertJson, String failureReason)
     alertRepository.save(failedEntity);
 }
 ```
+
+---
+
+### 6. Tratamento de Exceções
+
+**Hierarquia:**
+```
+AlertProcessingException (base)
+    └── InvalidAlertJsonException (JSON malformado)
+```
+
+**Estratégia:**
+```java
+try {
+    alertService.processAlert(alertJson);
+} catch (InvalidAlertJsonException e) {
+    // JSON inválido → salva payload bruto
+    alertFailureService.registerFailureFromRawPayload(alertJson, reason);
+    throw e;
+} catch (AlertProcessingException e) {
+    // Erro de negócio/técnico → salva dados do alerta
+    alertFailureService.registerFailureFromAlertJson(alertJson, reason);
+    throw e;
+}
+```
+
+---
+
+### 7. Mapper Dedicado
+
+```java
+@Component
+public class AlertMapper {
+    public AlertEntity toSuccessEntity(Alert alert) { ... }
+    public AlertEntity toFailureEntityFromAlert(Alert alert, String reason) { ... }
+    public AlertEntity toFailureEntityFromRawPayload(String payload, String reason) { ... }
+}
+```
+
+**Por quê?**
+- Evita duplicação de código
+- Facilita manutenção e evolução
+- Separação clara de responsabilidades
+- Testabilidade isolada
+
 ---
 
 ## Fluxos Transacionais
@@ -388,7 +488,7 @@ public void registerFailureFromAlertJson(String alertJson, String failureReason)
 3. Log de falha gravado no MySQL
 4. Commit de **T2**, independente de **T1**
 5. Exceção relançada → rollback de **T1**
-6. Offset não confirmado → mensagem será reprocessada ou enviada para DLT, dependendo da config
+6. Offset não confirmado → mensagem será reprocessada ou enviada para DLT
 
 ---
 
@@ -399,16 +499,32 @@ public void registerFailureFromAlertJson(String alertJson, String failureReason)
 - ✅ **Separação de responsabilidades:** listener só orquestra; serviços fazem o trabalho pesado
 - ✅ **Resiliência:** `REQUIRES_NEW` garante registro de falhas mesmo com erros no fluxo principal
 - ✅ **Rastreabilidade:** falhas ficam armazenadas com timestamp e motivo detalhado
+- ✅ **Escalabilidade:** Kafka distribui carga entre consumers; múltiplas instâncias possíveis
+- ✅ **Testabilidade:** serviços desacoplados e injetáveis; mapper testável isoladamente
+
+---
+
+## Princípios Aplicados
+
+| Princípio | Aplicação |
+|-----------|-----------|
+| **Single Responsibility** | Cada componente tem uma responsabilidade clara |
+| **Open/Closed** | Fácil extensão sem modificar código existente |
+| **Dependency Inversion** | Dependências via interfaces (Repository, ObjectMapper) |
+| **Separation of Concerns** | Camadas bem definidas (infra, aplicação, domínio) |
+| **Fail-Fast** | Validações no início do fluxo |
+| **Defensive Programming** | Tratamento robusto de exceções |
 
 
-### 5. Status do Alerta
+
+### 8. Status do Alerta
 
 Cada alerta processado tem um status final:
 
 - **`SUCCESS`**: Processamento bem-sucedido
 - **`FAILURE`**: Erro durante o processamento
 
-### 6. Uso de Imagens Docker
+### 9. Uso de Imagens Docker
 
 **Estratégia:**
 - Imagens dos microsserviços publicadas no Docker Hub
@@ -416,7 +532,7 @@ Cada alerta processado tem um status final:
 - Não precisa fazer build localmente
 - Download automático das imagens
 
-### 7. Separação em 3 Repositórios
+### 10. Separação em 3 Repositórios
 
 **Benefícios:**
 - Cada serviço evolui independentemente
@@ -429,10 +545,6 @@ Cada alerta processado tem um status final:
 - `dyelll/notification-api:latest` - [Docker Hub](https://hub.docker.com/r/dyelll/notification-api)
 - `dyelll/alert-processor:latest` - [Docker Hub](https://hub.docker.com/r/dyelll/alert-processor)
 
-
-## 📄 Licença
-
-Este projeto foi desenvolvido como parte do desafio técnico Ubisafe.
 
 ## 👥 Autor
 
