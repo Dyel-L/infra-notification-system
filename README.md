@@ -109,6 +109,7 @@ Este projeto está dividido em **3 repositórios separados**:
 - **MySQL 8.0** - Banco de dados relacional
 - **Docker** - Containerização
 - **Docker Compose** - Orquestração de containers
+- **Redis** - Cache distribuído para deduplicação de alertas duplicados
 
 ### Testes
 - **JUnit 5** - Framework de testes
@@ -157,12 +158,13 @@ O Docker irá:
 docker-compose ps
 
 # Resultado esperado:
-NAME               IMAGE                             COMMAND                  SERVICE            CREATED         STATUS                   PORTS
-alert-processor    dyelll/alert-processor:latest     "java -jar app.jar"      alert-processor    2 minutes ago   Up 2 minutes
-kafka              confluentinc/cp-kafka:7.5.0       "/etc/confluent/dock…"   kafka              2 minutes ago   Up 2 minutes             0.0.0.0:9092->9092/tcp, [::]:9092->9092/tcp
-mysql              mysql:8.0                         "docker-entrypoint.s…"   mysql              2 minutes ago   Up 2 minutes (healthy)   0.0.0.0:3306->3306/tcp, [::]:3306->3306/tcp
-notification-api   dyelll/notification-api:latest    "java -jar app.jar"      notification-api   2 minutes ago   Up 2 minutes             0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
-zookeeper          confluentinc/cp-zookeeper:7.5.0   "/etc/confluent/dock…"   zookeeper          2 minutes ago   Up 2 minutes             0.0.0.0:2181->2181/tcp, [::]:2181->2181/tcp
+NAME               IMAGE                             COMMAND                  SERVICE            CREATED          STATUS                    PORTS
+alert-processor    dyelll/alert-processor:latest     "java -jar app.jar"      alert-processor    39 seconds ago   Up 27 seconds
+kafka              confluentinc/cp-kafka:7.5.0       "/etc/confluent/dock…"   kafka              39 seconds ago   Up 38 seconds             0.0.0.0:9092->9092/tcp, [::]:9092->9092/tcp
+mysql              mysql:8.0                         "docker-entrypoint.s…"   mysql              39 seconds ago   Up 38 seconds (healthy)   0.0.0.0:3306->3306/tcp, [::]:3306->3306/tcp
+notification-api   dyelll/notification-api:latest    "java -jar app.jar"      notification-api   39 seconds ago   Up 27 seconds             0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+redis              redis:7-alpine                    "docker-entrypoint.s…"   redis              39 seconds ago   Up 38 seconds (healthy)   0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+zookeeper          confluentinc/cp-zookeeper:7.5.0   "/etc/confluent/dock…"   zookeeper          39 seconds ago   Up 38 seconds             0.0.0.0:2181->2181/tcp, [::]:2181->2181/tcp
 ```
 
 ###  Acompanhar Logs
