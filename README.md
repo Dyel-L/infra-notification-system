@@ -2,7 +2,7 @@
 
 Sistema distribuído de notificação assíncrona com arquitetura baseada em microsserviços, utilizando Java/Spring Boot, Apache Kafka e MySQL.
 
-## 📋 Visão Geral
+##  Visão Geral
 
 Este é o **repositório de infraestrutura** que orquestra todos os componentes do sistema através do Docker Compose. O sistema implementa um fluxo assíncrono de processamento de alertas composto por dois microsserviços independentes:
 
@@ -47,7 +47,7 @@ Este é o **repositório de infraestrutura** que orquestra todos os componentes 
                   └──────────────────────┘
 ```
 
-## 🏗️ Estrutura dos Repositórios
+##  Estrutura dos Repositórios
 
 Este projeto está dividido em **3 repositórios separados**:
 
@@ -93,7 +93,7 @@ Este projeto está dividido em **3 repositórios separados**:
   - Docker Compose e orquestração
   - Documentação de infraestrutura
 
-## 🚀 Tecnologias Utilizadas
+##  Tecnologias Utilizadas
 
 ### Aplicações
 - **Java 17** - Linguagem de programação
@@ -115,14 +115,14 @@ Este projeto está dividido em **3 repositórios separados**:
 - **Mockito** - Mocks para testes unitários
 - **Spring Boot Test** - Testes de integração
 
-## 🔧 Pré-requisitos
+##  Pré-requisitos
 
 - **Docker 20.10+**
 - **Docker Compose 2.0+**
 
-## 🏃 Como Executar
+##  Como Executar
 
-### ⚡ Início 
+###  Início 
 
 
 
@@ -150,7 +150,7 @@ O Docker irá:
 3. Subir MySQL e criar o banco `alerts_db`
 4. Subir os dois microsserviços
 
-### 📊 Verificar Status
+###  Verificar Status
 
 ```bash
 # Ver status de todos os containers
@@ -165,7 +165,7 @@ notification-api   dyelll/notification-api:latest    "java -jar app.jar"      no
 zookeeper          confluentinc/cp-zookeeper:7.5.0   "/etc/confluent/dock…"   zookeeper          2 minutes ago   Up 2 minutes             0.0.0.0:2181->2181/tcp, [::]:2181->2181/tcp
 ```
 
-### 📝 Acompanhar Logs
+###  Acompanhar Logs
 
 ```bash
 # Ver logs de todos os serviços
@@ -179,9 +179,9 @@ docker-compose logs -f alert-processor
 docker-compose logs --tail=100 -f
 ```
 
-## 📡 Testando o Sistema
+##  Testando o Sistema
 
-## 📊 Endpoints Disponíveis
+##  Endpoints Disponíveis
 
 | Serviço | Endpoint | Método | Porta | Descrição |
 |---------|----------|--------|-------|-----------|
@@ -203,6 +203,10 @@ docker-compose logs --tail=100 -f
 ```
 
 ### 1️⃣ Enviar um Alerta
+
+Coleção no Postman: [Link para Postman](https://www.postman.com/altimetry-engineer-56943415/desafio-ubisafe/collection/g61oww7/desafio-ubisafe?action=share&creator=41177636)
+
+Ou use o comando curl abaixo:
 
 ```bash
 curl -X POST http://localhost:8080/alerts \
@@ -259,7 +263,7 @@ SELECT * FROM alerts ORDER BY id DESC LIMIT 10;
 exit;
 ```
 
-## 🛠️ Comandos Úteis
+##  Comandos Úteis
 ### Monitoramento
 
 ```bash
@@ -279,7 +283,7 @@ docker network inspect infra-notification-system_ubisafe-network
 
 
 
-## 🏗️ Decisões de Arquitetura
+##  Decisões de Arquitetura
 
 ### 1. Comunicação Assíncrona com Kafka
 
@@ -401,22 +405,7 @@ Cada alerta processado tem um status final:
 - **`SUCCESS`**: Processamento bem-sucedido
 - **`FAILURE`**: Erro durante o processamento
 
-### 6. Healthchecks e Dependências
-
-**MySQL com healthcheck:**
-```yaml
-healthcheck:
-  test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-  interval: 10s
-  timeout: 5s
-  retries: 5
-```
-
-**Benefício:**
-- alert-processor só inicia quando MySQL está pronto
-- Evita erros de conexão durante startup
-
-### 7. Uso de Imagens Docker
+### 6. Uso de Imagens Docker
 
 **Estratégia:**
 - Imagens dos microsserviços publicadas no Docker Hub
@@ -424,7 +413,7 @@ healthcheck:
 - Não precisa fazer build localmente
 - Download automático das imagens
 
-### 8. Separação em 3 Repositórios
+### 7. Separação em 3 Repositórios
 
 **Benefícios:**
 - Cada serviço evolui independentemente
