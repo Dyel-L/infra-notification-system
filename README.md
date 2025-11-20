@@ -201,6 +201,7 @@ docker-compose logs --tail=100 -f
   "source": "Camera-01"
 }
 ```
+O campo severity aceita os valores: `LOW`, `MEDIUM`, `HIGH` , `CRITICAL`.
 
 ### 1️⃣ Enviar um Alerta
 
