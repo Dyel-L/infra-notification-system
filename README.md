@@ -91,7 +91,7 @@ Este projeto está dividido em **3 repositórios separados**:
 
 ```bash
 # 1. Clone este repositório
-git clone https://github.com/seu-usuario/infra-notification-system.git
+git clone https://github.com/Dyel-L/infra-notification-system.git
 
 cd infra-notification-system
 
