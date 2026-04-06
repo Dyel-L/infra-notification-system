@@ -1,4 +1,4 @@
-# Sistema de Notificação Assíncrona - Ubisafe
+# Sistema de Notificação Assíncrona
 
 Sistema distribuído de notificação assíncrona com arquitetura baseada em microsserviços, utilizando Java/Spring Boot, Apache Kafka e MySQL.
 
